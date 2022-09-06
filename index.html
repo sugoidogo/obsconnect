@@ -1,0 +1,210 @@
+<style>
+    * {
+        font-size: 3vmin;
+    }
+
+    video {
+        max-width: 100vw;
+        max-height: 50vh;
+    }
+</style>
+<div id="status">Loading...</div>
+<div id="permission">
+    <button onclick="allow()">Allow</button>
+    <button onclick="deny()">Deny</button>
+</div>
+<span id="connectionSettings" hidden>
+    <table>
+        <tr>
+            <td>Websocket URL:</td>
+            <td><input id="obsurl" type="url"></td>
+        </tr>
+        <tr>
+            <td>Websocket Password:</td>
+            <td><input id="obspassword" type="password"></td>
+        </tr>
+    </table>
+    <button id="connect" onclick="connect()">Connect</button>
+    <button id="useQR" onclick="useQrCode()">Use QR Code</button>
+    <br>
+    <span id="qr" hidden>
+        <video id="qrvideo" hidden></video>
+        <br>
+        <span>Make sure this device and the one running OBS are on the same network.</span>
+        <br>
+        <button onclick="screenCapture()">Screen Capture</button>
+        <span id="loadingCameras">Loading video device list...</span>
+    </span>
+</span>
+<script src="https://cdn.jsdelivr.net/npm/obs-websocket-js@5.0.1/dist/obs-ws.min.js"
+    integrity="sha256-UbkntZrYTokZf8tldcF9nmOn5CNgcmDP+MNsUcKUpEE=" crossorigin="anonymous">
+    </script>
+<script src="https://cdn.jsdelivr.net/npm/qr-scanner@1.4.1/qr-scanner.umd.min.js"
+    integrity="sha256-jstRoCLjzwXwLN2o0DMkkwRHtqYCQMxrRkktAHwZekU=" crossorigin="anonymous">
+    </script>
+<script>
+    const params = new URLSearchParams(window.location.search)
+    const redirect_uri = params.get('redirect_uri')
+    document.querySelector('#status').innerHTML = 'The website at:<br>' + redirect_uri + '<br>wants to connect to your OBS Websocket.<br>This will give them FULL CONTROL OF OBS.'
+    document.querySelector('#permission').hidden = false
+    const obs = new OBSWebSocket()
+
+    async function connect() {
+        document.querySelector('#status').innerHTML = 'Connecting to OBS...'
+        try {
+            await obs.connect(
+                document.querySelector('#obsurl').value,
+                document.querySelector('#obspassword').value
+            )
+        } catch (error) {
+            const status=document.querySelector('#status')
+            if(status.innerHTML='Connecting to OBS...'){
+                status.innerHTML=error
+            }
+            return false
+        }
+        return true
+    }
+
+    let interval
+    const video = document.querySelector('video')
+
+    async function useQrCode() {
+        console.log('starting QR Code scanner')
+        interval = setInterval(qrScan, 1000)
+        const qr = document.querySelector('#qr')
+        qr.hidden = false
+        video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        let mediaDevices = await navigator.mediaDevices.enumerateDevices()
+        mediaDevices = mediaDevices.filter(function (device) {
+            return device.kind == "videoinput"
+        })
+        for (const device of mediaDevices) {
+            const button = document.createElement('button')
+            button.innerHTML = device.label
+            button.onclick = function () { switchCamera(device) }
+            qr.appendChild(button)
+        }
+        document.querySelector('#loadingCameras').hidden = true
+    }
+
+    async function screenCapture() {
+        video.srcObject = null
+        const screenCaptureDevice = await navigator.mediaDevices.getDisplayMedia()
+        video.srcObject = screenCaptureDevice
+        video.play()
+        video.hidden = false
+    }
+
+    async function switchCamera(device) {
+        video.srcObject = null
+        const camera = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: device.deviceId } } })
+        video.srcObject = camera
+        video.play()
+        video.hidden = false
+    }
+
+    function qrScan() {
+        QrScanner.scanImage(video, { returnDetailedScanResult: true })
+            .then(onQrScan).catch(function (error) { console.warn(error) })
+    }
+
+    async function onQrScan(result) {
+        var data = result.data.split('/')
+        if (data.shift() != 'obsws:') {
+            console.log('found non-OBS QR Code')
+            return false
+        }
+        clearInterval(interval)
+        console.log('found OBS QR Code')
+        data.shift()
+        const fullurl = 'ws://' + data.shift()
+        const port = fullurl.split(':').pop()
+        const localurl = 'ws://localhost:' + port
+        const password = data.shift()
+        const obsurl = document.querySelector('#obsurl')
+        const obspassword = document.querySelector('#obspassword')
+        obspassword.value = password
+        obsurl.value = localurl
+        console.log('attempting localhost connection')
+        if (await connect()) {
+            return true
+        }
+        obsurl.value = fullurl
+        console.log('attempting local network connection')
+        if (await connect()) {
+            return true
+        }
+        return false
+    }
+
+    obs.addListener('ConnectionError', function onConnectionError(error){
+        document.querySelector('#status').innerHTML=error
+    })
+
+    obs.addListener('ConnectionClosed', function onConnectionClosed(error) {
+        switch (error.code) {
+            case 1000:
+                console.log('unknown error, trying again')
+                connect()
+                break
+            case 1006:
+                document.querySelector('#status').innerHTML = 'obs websocket not found.' +
+                    '<br>Is <a href="https://github.com/obsproject/obs-websocket/releases/latest">obs-websocket</a> installed?' +
+                    '<br>Is obs open? Check your websocket settings in OBS under the Tools menu.' +
+                    '<br>Is the info below correct? Consider using the QR scanner.'
+                break
+            case 4009:
+                document.querySelector('#status').innerHTML = error.message.split(' ').slice(-3).join(' ').toLowerCase().replace('authentication', 'Password') +
+                    '<br>You can view or change your websocket password in OBS under the Tools menu.'
+                break
+            default:
+                document.querySelector('#status').innerHTML = 'connection closed: Error ' + error.code + ': ' + error.message
+                break
+        }
+    })
+
+    obs.addListener('ConnectionOpened', function onConnectedOpened() {
+        console.log('connected to socket, saving url')
+        document.querySelector('#status').innerHTML = 'Connected'
+        localStorage.setItem('obsurl', document.querySelector('#obsurl').value)
+    })
+
+    obs.addListener('Identified', function onIdentified() {
+        console.log('authentication passed, saving password')
+        document.querySelector('#status').innerHTML = 'Password Passed'
+        localStorage.setItem('obspassword', document.querySelector('#obspassword').value)
+        //obs.disconnect()
+        redirect()
+    })
+
+    async function redirect() {
+        try {
+            document.querySelector('#status').innerHTML = 'Redirecting...'
+            const url = new URL(redirect_uri)
+            url.searchParams.append('obsurl', document.querySelector('#obsurl').value)
+            url.searchParams.append('obspassword', document.querySelector('#obspassword').value)
+            url.searchParams.append('userChoice', 'allow')
+            window.location.replace(url.href)
+        } catch (e) {
+            document.querySelector('#status').innerHTML = 'Error during redirect: '+e
+            console.error(e)
+        }
+    }
+
+    function allow() {
+        console.log('user allowed connection, attempting to use saved info')
+        document.querySelector('#permission').hidden = true
+        document.querySelector('#connectionSettings').hidden = false
+        document.querySelector('#obsurl').value = localStorage.getItem('obsurl') || 'ws://localhost:4455'
+        document.querySelector('#obspassword').value = localStorage.getItem('obspassword') || ''
+        connect()
+    }
+
+    function deny() {
+        console.log('user denied connection, returning to redirect_uri')
+        const url = new URL(redirect_uri)
+        url.searchParams.append('userChoice', 'deny')
+        window.location.replace(url.href)
+    }
+</script>
