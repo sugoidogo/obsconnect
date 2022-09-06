@@ -51,11 +51,10 @@
 
     async function connect() {
         document.querySelector('#status').innerHTML = 'Connecting to OBS...'
+        const url=document.querySelector('#obsurl').value
+        const password=document.querySelector('#obspassword').value
         try {
-            await obs.connect(
-                document.querySelector('#obsurl').value,
-                document.querySelector('#obspassword').value
-            )
+            await obs.connect(url,password)
         } catch (error) {
             const status=document.querySelector('#status')
             if(status.innerHTML='Connecting to OBS...'){
@@ -207,4 +206,10 @@
         url.searchParams.append('userChoice', 'deny')
         window.location.replace(url.href)
     }
+
+    async function bypass(){
+        const url=document.querySelector('#obsurl').value
+        await navigator.clipboard.writeText(url)
+    }
+
 </script>
