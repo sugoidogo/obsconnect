@@ -6,6 +6,9 @@ Send your users to the page `https://sugoidogo.github.io/obsconnect?redirect_uri
 Send [this page](https://github.com/sugoidogo/obsconnect) (THE LINK, NOT A SCREENSHOT) to the developer of whatever web-based obs tool you want to use it.
 
 ( If you user sent you this in a screenshot anyways, it's at github.com/sugoidogo/obsconnect )
+## Support
+- Get support via [Discord](https://discord.gg/zxDnYSvMNw)
+- Give support via [PayPal](https://paypal.me/SugoiDogo)
 ## Security
 This project stores your OBS Websocket password in `localStorage` for re-use whenever a new web app wants to connect to OBS. Depending on your browser, that means your password is stored unencrypted somewhere in your browser data. That would be a possible security concern, if obs-websocket weren't already [storing your password in plain text](https://github.com/obsproject/obs-websocket/discussions/766#:~:text=via%20this%20dialog.-,%5BTechnical%20Note%3A%5D,-This%20feature%20has).
 ## Licence
